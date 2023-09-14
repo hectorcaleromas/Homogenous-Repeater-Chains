@@ -1595,7 +1595,7 @@ def policy_eval_general(n, p, p_s, cutoff, list_idx=[], list_action=[], toleranc
         save_swapasap_data(n, p, p_s, cutoff, tolerance, v0_evol, agent.state_info, exe_time)
 
     return v0_evol, agent.state_info, exe_time
-def save_local_data(n, p, p_s, cutoff, tolerance, v0_evol,state_info, exe_time,key):
+def save_local_data(n, p, p_s, cutoff, tolerance, v0_evol,state_info, exe_time,key, iterations=False, iteration=0):
     '''Save local policy for this set of parameters.
         ---Inputs---
             · n:    (int) number of nodes in the chain.
@@ -1627,19 +1627,25 @@ def save_local_data(n, p, p_s, cutoff, tolerance, v0_evol,state_info, exe_time,k
                          expected delivery time from this state can be
                          calculated as -(value+1).'''
     # Create data directory if needed
-    try:
-        os.mkdir('data_local')
-    except FileExistsError:
-        pass
-
+    if iterations:
+        try:
+            os.mkdir('data_local_iteration')
+        except FileExistsError:
+            pass
     # Save data
-    filename = 'data_local/n%s_p%.3f_ps%.3f_tc%s_tol%s_%s'%(n,p,p_s,cutoff,tolerance,key)
+        filename = 'data_local_iteration/n%s_p%.3f_ps%.3f_tc%s_tol%s_%s_it_%d'%(n,p,p_s,cutoff,tolerance,key,iteration)
+    else:
+        try:
+            os.mkdir('data_local')
+        except FileExistsError:
+            pass
+        filename = 'data_local/n%s_p%.3f_ps%.3f_tc%s_tol%s_%s'%(n,p,p_s,cutoff,tolerance,key)
     data = {'v0_evol': v0_evol, 'state_info': state_info, 'exe_time':exe_time}
     with open(filename, 'wb') as handle:
         pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
         
-def check_local_data(n, p, p_s, cutoff, tolerance,key):
+def check_local_data(n, p, p_s, cutoff, tolerance,key,iterations=False, iteration=0):
     '''If global to local approximation has been run and saved for this set of
        parameters, return True. Otherwise, return False.
         ---Inputs---
@@ -1651,13 +1657,16 @@ def check_local_data(n, p, p_s, cutoff, tolerance,key):
                         whose age reaches the cutoff are discarded.
             · tolerance:    (float) tolerance used as stopping condition
                             in the policy iteration algorithm.'''
-    filename = 'data_local/n%s_p%.3f_ps%.3f_tc%s_tol%s_%s'%(n,p,p_s,cutoff,tolerance,key)
+    if iterations:
+        filename = 'data_local_iteration/n%s_p%.3f_ps%.3f_tc%s_tol%s_%s_it_%d'%(n,p,p_s,cutoff,tolerance,key,iteration)
+    else:
+        filename = 'data_local/n%s_p%.3f_ps%.3f_tc%s_tol%s_%s'%(n,p,p_s,cutoff,tolerance,key)
     if Path(filename).exists():
         return True
     else:
         return False
 
-def load_local_data(n, p, p_s, cutoff, tolerance,key):
+def load_local_data(n, p, p_s, cutoff, tolerance,key,iterations=False, iteration=0):
     '''Load policy data obtained via global to local approximation.
         ---Inputs---
             · n:    (int) number of nodes in the chain.
@@ -1690,7 +1699,10 @@ def load_local_data(n, p, p_s, cutoff, tolerance,key):
                          expected delivery time from this state can be
                          calculated as -(value+1).
             · exe_time: (int) execution time of the algorithm in seconds.'''
-    filename = 'data_local/n%s_p%.3f_ps%.3f_tc%s_tol%s_%s'%(n,p,p_s,cutoff,tolerance,key)
+    if iterations:
+        filename = 'data_local_iteration/n%s_p%.3f_ps%.3f_tc%s_tol%s_%s_it_%d'%(n,p,p_s,cutoff,tolerance,key,iteration)
+    else:
+        filename = 'data_local/n%s_p%.3f_ps%.3f_tc%s_tol%s_%s'%(n,p,p_s,cutoff,tolerance,key)
     with open(filename, 'rb') as handle:
         data = pickle.load(handle)
     return data['v0_evol'], data['state_info'], data['exe_time']
@@ -1730,9 +1742,7 @@ def global_to_local(n,p,p_s,cutoff,tol,key="default",N_samples=10000):
     
     if key=="copy":
         policy_local= [d['policy'] for d in global_info]
-        v0_evol_local, local_info, exe_time_local = policy_eval_general(n, p, p_s, cutoff, \
-                                                                        list(range(0,len(global_info))), policy_local, tol)
-        save_local_data(n, p, p_s, cutoff, tol, v0_evol_local, local_info, exe_time_local,key)
+        
     
     elif key=="majority":
         combinations_matrix=generate_combinations(n,cutoff)
@@ -1772,9 +1782,6 @@ def global_to_local(n,p,p_s,cutoff,tol,key="default",N_samples=10000):
                     local_policy_state[action_space.index(nodes_local)]=1
                     
             policy_local.append(local_policy_state)
-        v0_evol_local, local_info, exe_time_local = policy_eval_general(n, p, p_s, cutoff, \
-                                                                        list(range(0,len(global_info))), policy_local, tol)
-        save_local_data(n, p, p_s, cutoff, tol, v0_evol_local, local_info, exe_time_local,key)
         print(majority_matrix)
 
     elif key=="value":
@@ -1816,9 +1823,6 @@ def global_to_local(n,p,p_s,cutoff,tol,key="default",N_samples=10000):
                     local_policy_state[action_space.index(nodes_local)]=1
         
             policy_local.append(local_policy_state)
-        v0_evol_local, local_info, exe_time_local = policy_eval_general(n, p, p_s, cutoff, \
-                                                                        list(range(0,len(global_info))), policy_local, tol)
-        save_local_data(n, p, p_s, cutoff, tol, v0_evol_local, local_info, exe_time_local,key)
         print(majority_matrix)
 
     elif key=="probability":
@@ -1863,8 +1867,6 @@ def global_to_local(n,p,p_s,cutoff,tol,key="default",N_samples=10000):
                     local_policy_state[action_space.index(nodes_local)]=1
                     
             policy_local.append(local_policy_state)
-        v0_evol_local, local_info, exe_time_local = policy_eval_general(n, p, p_s, cutoff, list(range(0,len(global_info))), policy_local, tol)
-        save_local_data(n, p, p_s, cutoff, tol, v0_evol_local, local_info, exe_time_local,key)
         print(probability_matrix)
     
     elif key=="value_probability":
@@ -1908,15 +1910,17 @@ def global_to_local(n,p,p_s,cutoff,tol,key="default",N_samples=10000):
                 else:
                     local_policy_state[action_space.index(nodes_local)]=1
                     
-            policy_local.append(local_policy_state)
-        v0_evol_local, local_info, exe_time_local = policy_eval_general(n, p, p_s, cutoff, \
-                                                                             list(range(0,len(global_info))), policy_local, tol)
-        save_local_data(n, p, p_s, cutoff, tol, v0_evol_local, local_info, exe_time_local,key)
+            policy_local.append(local_policy_state)      
         print(probability_matrix)
+
+    else:
+        raise ValueError('key not implemented')
+    v0_evol_local, local_info, exe_time_local = policy_eval_general(n, p, p_s, cutoff, \
+                                                                    list(range(0,len(global_info))), policy_local, tol)
+    save_local_data(n, p, p_s, cutoff, tol, v0_evol_local, local_info, exe_time_local,key)
         
-        
-def state_distribution(policy, n, p, p_s, cutoff, states_list, tolerance=1e-7, N_samples=10000, \
-                       randomseed=2, progress_bar='notebook'):
+def state_distribution(policy, n, p, p_s, cutoff, states_list, tolerance=1e-7 , N_samples=10000, \
+                       key="value_probability",iterations=False, iteration=0,randomseed=2, progress_bar='notebook'):
     '''Performs a Monte Carlo simulation of the environment used
         for policy iteration. For each sample, the repeater chain
         evolves until end-to-end entanglement is produced, and states which are visited are logged.
@@ -1958,7 +1962,8 @@ def state_distribution(policy, n, p, p_s, cutoff, states_list, tolerance=1e-7, N
 
     if policy == 'optimal':
         nowait_states, nowait_actions = read_policy(n,p,p_s,cutoff,tolerance)
-
+    elif policy == 'local':
+        nowait_states, nowait_actions = read_policy_local(n,p,p_s,cutoff,tolerance, key, iterations, iteration)
     rng = np.random.RandomState(0)
     count_matrix=np.zeros(len(states_list))
 
@@ -1971,34 +1976,12 @@ def state_distribution(policy, n, p, p_s, cutoff, states_list, tolerance=1e-7, N
 
         # Run policy
         while not done:
-            # Choose next action
-            if policy == 'swap-asap':
-                m = 0
-                action = action_space[0]
-                for a in action_space:
-                    if len(a) > m:
-                        m = len(a)
-                        action = a
-            elif policy == 'optimal':
-                action = []
-                for s in nowait_states:
-                    s = np.array(s)
-                    if (state == s).all():
-                        action = nowait_actions[nowait_states.index(state.tolist())]
-                        break
-            elif policy == 'wait':
-                if environment.check_e2e_path(state):
-                    m = 0
-                    action = action_space[0]
-                    for a in action_space:
-                        if len(a) > m:
-                            m = len(a)
-                            action = a
-                else:
-                    action = []
-            else:
-                raise ValueError('Unknown policy')
-
+            action = []
+            for s in nowait_states:
+                s = np.array(s)
+                if (state == s).all():
+                    action = nowait_actions[nowait_states.index(state.tolist())]
+                    break
             # Perform action
             s_out, p_out, a_out = environment.step(state, action)
             idx_next = rng.choice( len(s_out), p=p_out )
@@ -2013,3 +1996,268 @@ def state_distribution(policy, n, p, p_s, cutoff, states_list, tolerance=1e-7, N
             done = environment.check_e2e_link(state)
 
     return count_matrix/sum(count_matrix)
+
+
+def read_policy_local(n, p, p_s, cutoff, tolerance, key, iterations=False, iteration=0, print_statistics=False):
+    '''For a specific combination of parameters, provides a list with
+        the states in which the action of an optimal policy is to perform
+        at least one swap, and the corresponding action. The optimal policy
+        must be found and saved in advance using policy_iteration().
+        ---Inputs---
+            · n:    (int) number of nodes in the chain.
+            · p:    (float) probability of successful entanglement
+                    generation between neighboring nodes.
+            · p_s:  (float) probability of successful entanglement swap.
+            · cutoff:   (int) memory cutoff in time steps - entangled links
+                        whose age reaches the cutoff are discarded.
+            · tolerance:    (float) tolerance used in policy iteration.
+                            This input is only necessary if policy='optimal'.
+            · print_statistics: (str) if True, prints the total number of
+                                states, number non-terminal states,
+                                number of states with more than one
+                                possible action, and number of states where
+                                the optimal policy decides to perform at
+                                least one swap.
+        ---Outputs---
+            · nowait_states:    (list) states in which the optimal policy
+                                decides to perform at least one swap.
+            · nowait_actions:   (list) actions chosen by an optimal policy
+                                in the states from nowait_states.'''
+
+    # Load data (if exists)
+    if check_local_data(n, p, p_s, cutoff, tolerance, key, iterations, iteration):
+        v0_evol, state_info, _ = load_local_data(n, p, p_s, cutoff, tolerance, key, iterations, iteration)
+    else:
+        raise ValueError('Data for the specified local policy not found for n=%d, p=%.3f,'%(n,p)+
+                         'p_s=%.3f, cutoff=%d, tol=%e'%(p_s,cutoff,tolerance))
+
+    env = Environment(p, cutoff) # These values are not relevant
+    nowait_states = [] # States where the optimal action is to perform some swap(s)
+    nowait_actions = []
+    c_nonterminal = 0
+    c_decision = 0
+    for e in state_info:
+        # Build state vector
+        state = e['state']
+        if not env.check_e2e_link(state): # Only consider non-terminal states
+            c_nonterminal += 1
+            if len(env.generate_action_space(state))>1: # States with more than 1 action
+                # Find the action that should be performed with probability 1
+                c_decision += 1
+                k = 0
+
+                try:
+                    while e['policy'][k] < 1:
+                        k += 1
+                    action = e['action_space'][k]
+                except: # XXX: This happens in states with e2e path in old data (p_s=1),
+                        # since those were terminal states in the old implementation
+                    action = e['action_space'][-1]
+
+                # Save state only if action is to perform a swap
+                if action:
+                    nowait_states += [state.tolist()]
+                    nowait_actions += [action]
+
+    if print_statistics:
+        print('Total number states: %d'%len(state_info))
+        print('Non-terminal states: %d'%c_nonterminal)
+        print('Decision states: %d'%c_decision)
+        print('No-wait states: %d'%len(nowait_states))
+
+    return nowait_states, nowait_actions
+
+def global_to_local_iteration(n,p,p_s, cutoff, tol, key="majority", N_iteration=10, N_samples=10000):
+    key=key.lower()
+    if not check_local_data(n,p,p_s, cutoff, tol, key):
+        global_to_local(n,p,p_s,cutoff,tol, key,N_samples)
+    value_list=[]
+    combinations_matrix=generate_combinations(n,cutoff)
+    current_v0, current_info, _ =load_local_data(n,p, p_s, cutoff, tol, key)
+    current_policy= [d['policy'] for d in current_info]
+    value_list.append(current_v0[0][-1])
+    done=False
+    iteration=1
+    iterations=False
+    while not done and iteration < N_iteration:
+        majority_matrix=copy_shape_matrix(combinations_matrix)
+        current_value=-current_v0[0][-1]-1
+        if key=="majority":
+            next_policy=[]
+            for dictionary in current_info:
+                state=dictionary['state']
+                policy=dictionary['policy']
+                action_space=dictionary['action_space']
+                
+                for interior_node in range(n-2):
+                    
+                    if np.any(np.all(combinations_matrix[interior_node] == state[interior_node+1,:], axis=1)):
+                        index = np.where(np.all(combinations_matrix[interior_node] == state[interior_node+1,:], axis=1))[0].item()
+                        majority_matrix[interior_node][index] += 1-2*(interior_node+1 in action_space[policy.index(1)])
+                        
+            for d in current_info:
+                state=d['state']
+                policy=d['policy']
+                action_space=d['action_space']
+                if len(action_space)<2:
+                    next_policy_state=[1]
+                else:
+                    nodes_local=[]
+                    next_policy_state=[0]*len(action_space)
+                
+                    for node in range(n-2):
+                        #print(node)
+                        if np.any(np.all(combinations_matrix[node] == state[node+1,:], axis=1)):
+                            if  majority_matrix[node][np.where(np.all(combinations_matrix[node] == state[node+1,:], axis=1))[0].item()]<0:
+                                nodes_local.append(node+1)
+                
+                    if len(nodes_local)==0:
+                        next_policy_state[0]=1
+                    else:
+                        next_policy_state[action_space.index(nodes_local)]=1
+                        
+                next_policy.append(next_policy_state)
+            print(f"Iteration: {iteration}")
+            print(majority_matrix)
+
+        elif key=="value":
+            majority_matrix=copy_shape_matrix(combinations_matrix)
+            next_policy=[]
+            
+            for dictionary in current_info:
+                state=dictionary['state']
+                policy=dictionary['policy']
+                action_space=dictionary['action_space']
+                value=-dictionary['value']-1
+                
+                for interior_node in range(n-2):
+                    
+                    if np.any(np.all(combinations_matrix[interior_node] == state[interior_node+1,:], axis=1)):
+                        index = np.where(np.all(combinations_matrix[interior_node] == state[interior_node+1,:], axis=1))[0].item()
+                        majority_matrix[interior_node][index] += (1-2*(interior_node+1 in action_space[policy.index(1)]))*(current_value-value) 
+                        
+            for d in current_info:
+                state=d['state']
+                policy=d['policy']
+                action_space=d['action_space']
+                if len(action_space)<2:
+                    next_policy_state=[1]
+                else:
+                    nodes_local=[]
+                    next_policy_state=[0]*len(action_space)
+                
+                    for node in range(n-2):
+                        #print(node)
+                        if np.any(np.all(combinations_matrix[node] == state[node+1,:], axis=1)):
+                            if  majority_matrix[node][np.where(np.all(combinations_matrix[node] == state[node+1,:], axis=1))[0].item()]<0:
+                                nodes_local.append(node+1)
+                
+                    if len(nodes_local)==0:
+                        next_policy_state[0]=1
+                    else:
+                        next_policy_state[action_space.index(nodes_local)]=1
+            
+                next_policy.append(next_policy_state)
+            print(f"Iteration: {iteration}")
+            print(majority_matrix)
+            
+        elif key=="probability":
+            probability_matrix=copy_shape_matrix(combinations_matrix)
+            states_list= [d['state'] for d in current_info]
+            distribution_matrix=state_distribution("local", n, p, p_s, cutoff, states_list, tol, N_samples, key, iterations, iteration-1)
+            next_policy=[]
+            idx=0
+            for dictionary in current_info:
+                state=dictionary['state']
+                policy=dictionary['policy']
+                action_space=dictionary['action_space']
+            
+                for interior_node in range(n-2):
+                
+                    if np.any(np.all(combinations_matrix[interior_node] == state[interior_node+1,:], axis=1)):
+                        index = np.where(np.all(combinations_matrix[interior_node] == state[interior_node+1,:], axis=1))[0].item()
+                        probability_matrix[interior_node][index] += (1-2*(interior_node+1 in action_space[policy.index(1)]))\
+                        *distribution_matrix[idx]
+                idx+=1
+                    
+            for d in current_info:
+                state=d['state']
+                policy=d['policy']
+                action_space=d['action_space']
+                if len(action_space)<2:
+                    next_policy_state=[1]
+                else:
+                    nodes_local=[]
+                    next_policy_state=[0]*len(action_space)
+            
+                    for node in range(n-2):
+                        #print(node)
+                        if np.any(np.all(combinations_matrix[node] == state[node+1,:], axis=1)):
+                            if  probability_matrix[node][np.where(np.all(combinations_matrix[node] == state[node+1,:], axis=1))[0].item()]<0:
+                                nodes_local.append(node+1)
+            
+                    if len(nodes_local)==0:
+                        next_policy_state[0]=1
+                    else:
+                        next_policy_state[action_space.index(nodes_local)]=1
+                    
+                next_policy.append(next_policy_state)
+            print(f"Iteration: {iteration}")
+            print(probability_matrix)    
+        elif key=="value_probability":
+            probability_matrix=copy_shape_matrix(combinations_matrix)
+            states_list= [d['state'] for d in current_info]
+            distribution_matrix=state_distribution("local", n, p, p_s, cutoff, states_list, tol, N_samples, key, iterations, iteration-1)
+            next_policy=[]
+            idx=0
+            for dictionary in current_info:
+                state=dictionary['state']
+                policy=dictionary['policy']
+                action_space=dictionary['action_space']
+                value=-dictionary['value']-1
+                
+                for interior_node in range(n-2):
+                    
+                    if np.any(np.all(combinations_matrix[interior_node] == state[interior_node+1,:], axis=1)):
+                        index = np.where(np.all(combinations_matrix[interior_node] == state[interior_node+1,:], axis=1))[0].item()
+                        probability_matrix[interior_node][index] += (1-2*(interior_node+1 in action_space[policy.index(1)]))\
+                        *(distribution_matrix[idx])*(current_value-value)
+            idx+=1          
+            for d in current_info:
+                state=d['state']
+                policy=d['policy']
+                action_space=d['action_space']
+                if len(action_space)<2:
+                    next_policy_state=[1]
+                else:
+                    nodes_local=[]
+                    next_policy_state=[0]*len(action_space)
+                
+                    for node in range(n-2):
+                        #print(node)
+                        if np.any(np.all(combinations_matrix[node] == state[node+1,:], axis=1)):
+                            if  probability_matrix[node][np.where(np.all(combinations_matrix[node] == state[node+1,:], axis=1))[0].item()]<0:
+                                nodes_local.append(node+1)
+                
+                    if len(nodes_local)==0:
+                        next_policy_state[0]=1
+                    else:
+                        next_policy_state[action_space.index(nodes_local)]=1
+                        
+                next_policy.append(next_policy_state)      
+            print(probability_matrix)
+        else:
+            raise ValueError('key not implemented')
+            
+        next_v0, next_info, next_exe_time = policy_eval_general(n, p, p_s, cutoff, \
+                                                    list(range(0,len(current_info))), next_policy, tol)
+        save_local_data(n, p, p_s, cutoff, tol, next_v0, next_info, next_exe_time,key,True, iteration)
+        value_list.append(next_v0[0][-1])
+        if next_policy == current_policy:
+            done=True
+        current_policy = next_policy
+        current_v0 = next_v0
+        current_info  = next_info
+        iteration+=1
+        iterations=True
+    return value_list
