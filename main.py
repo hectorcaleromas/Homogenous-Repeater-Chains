@@ -642,7 +642,7 @@ def policy_eval_swapasap(n, p, p_s, cutoff, tolerance=1e-5,
 
     if savedata:
         save_swapasap_data(n, p, p_s, cutoff, tolerance, v0_evol, agent.state_info, exe_time)
-
+    print(idx)
     return v0_evol, agent.state_info, exe_time
 
 def check_swapasap_data(n, p, p_s, cutoff, tolerance):
@@ -841,6 +841,20 @@ def simulate_environment(policy, n, p, p_s, cutoff, N_samples=100,
                             action = a
                 else:
                     action = []
+            
+            elif policy== 'sowe':
+                nodes_list=[]
+                for node in range(1,n-1):
+                    d=div_by_2(node)
+                    if d==1:
+                        if [node] in action_space and node%2==0 and max(state[node][node-1],state[node][node+1])<cutoff:
+                            nodes_list.append(node)
+                    if d>1:
+                        if [node] in action_space and node%(2**d)==0 and \
+                        max(min(state[node][node-2**d+1:node-1]),min(state[node][node+1:node+2**d-1]))<cutoff:
+                            nodes_list.append(node)
+                            
+                action=[x for x in action_space[-1] if x not in nodes_list]
             else:
                 raise ValueError('Unknown policy')
 
@@ -1453,8 +1467,8 @@ if __name__=='__main__':
     for e in agent.state_info:
         print(e['state'], e['action_space'], e['policy'])
 
-def policy_eval_general(n, p, p_s, cutoff, list_idx=[], list_action=[], tolerance=1e-5,
-                           progress=True, savedata=False, nested=False):
+def policy_eval_general(n, p, p_s, cutoff, list_action, tolerance=1e-5,
+                           progress=True, savedata=False, key="", nested=False ):
     '''Find the expected delivery time of the swap-asap policy in a
         homogeneous repeater chain with the policy evaluation step from
         our policy iteration algorithm.
@@ -1515,38 +1529,36 @@ def policy_eval_general(n, p, p_s, cutoff, list_idx=[], list_action=[], toleranc
     agent = Agent(s0=s0, max=cutoff)
     environment = Environment(p, cutoff, p_s=p_s)
     v0_evol = []
-    assert len(list_idx)==len(list_action), "Number of actions must equal number of indexes"
-    
+
     ### Policy evaluation  ###
     v0 = []
     error = -np.inf
     while abs(error) > tolerance:
         idx = 0
-        count=0
         error = -np.inf
         while idx < len(agent.state_list):
             state = agent.get(idx, 'state')
             value = agent.get(idx, 'value')
             policy = agent.get(idx, 'policy')
             action_space = agent.get(idx, 'action_space')
-
+            
+          
             # Check for terminal states
+            
             if environment.check_e2e_link(state):
                 idx+=1
-                count+=1
+              
                 continue
 
-            # Set policy
-            if idx in list_idx:
-                policy_general = list_action[count]
-                count+=1
+            
+              # Set swap-asap
+            if idx<len(policy):
+                policy_general = list_action[idx]
+            
             else:
                 policy_general = [0.0 for action in policy]
-                policy_general[-1]= 1.0
-          
+                policy_general[-1] = 1.0
 
-            #print(policy_general[0])
-          
             agent.update(idx, policy_general, 'policy')
 
             # Loop over possible actions
@@ -1567,7 +1579,8 @@ def policy_eval_general(n, p, p_s, cutoff, list_idx=[], list_action=[], toleranc
             # Update value
             agent.update(idx, v, 'value')
             idx +=1
-
+            
+            
         v0.append(agent.get(0,'value'))
         if progress:
             print('Policy eval.: error = %.2e > %.2e = tolerance'%(error,tolerance), end='\r')
@@ -1580,7 +1593,7 @@ def policy_eval_general(n, p, p_s, cutoff, list_idx=[], list_action=[], toleranc
                     exe_time = end_time-start_time
                     v0_evol_cp = v0_evol
                     v0_evol_cp.append(v0)
-                    save_swapasap_data(n, p, p_s, cutoff, checkpoint_tol, v0_evol_cp, agent.state_info, exe_time)
+                    save_local_data(n, p, p_s, cutoff, checkpoint_tol, v0_evol_cp, agent.state_info, exe_time, key)
                     checkpoints = checkpoints[1:]
 
     v0_evol.append(v0)
@@ -1592,9 +1605,11 @@ def policy_eval_general(n, p, p_s, cutoff, list_idx=[], list_action=[], toleranc
     exe_time = end_time-start_time
 
     if savedata:
-        save_swapasap_data(n, p, p_s, cutoff, tolerance, v0_evol, agent.state_info, exe_time)
+        save_local_data(n, p, p_s, cutoff,tolerance, v0_evol_cp, agent.state_info, exe_time, key)
 
     return v0_evol, agent.state_info, exe_time
+
+
 def save_local_data(n, p, p_s, cutoff, tolerance, v0_evol,state_info, exe_time,key, iterations=False, iteration=0):
     '''Save local policy for this set of parameters.
         ---Inputs---
@@ -1782,7 +1797,7 @@ def global_to_local(n,p,p_s,cutoff,tol,key="default",N_samples=10000):
                     local_policy_state[action_space.index(nodes_local)]=1
                     
             policy_local.append(local_policy_state)
-        print(majority_matrix)
+        print(np.sign(np.max(np.concatenate(majority_matrix))))
 
     elif key=="value":
         combinations_matrix=generate_combinations(n,cutoff)
@@ -1823,8 +1838,7 @@ def global_to_local(n,p,p_s,cutoff,tol,key="default",N_samples=10000):
                     local_policy_state[action_space.index(nodes_local)]=1
         
             policy_local.append(local_policy_state)
-        print(majority_matrix)
-
+        print(np.sign(np.max(np.concatenate(majority_matrix))))
     elif key=="probability":
         combinations_matrix=generate_combinations(n,cutoff)
         probability_matrix=copy_shape_matrix(combinations_matrix)
@@ -1867,7 +1881,7 @@ def global_to_local(n,p,p_s,cutoff,tol,key="default",N_samples=10000):
                     local_policy_state[action_space.index(nodes_local)]=1
                     
             policy_local.append(local_policy_state)
-        print(probability_matrix)
+        print(np.sign(np.max(np.concatenate(probability_matrix))))
     
     elif key=="value_probability":
         combinations_matrix=generate_combinations(n,cutoff)
@@ -1911,12 +1925,10 @@ def global_to_local(n,p,p_s,cutoff,tol,key="default",N_samples=10000):
                     local_policy_state[action_space.index(nodes_local)]=1
                     
             policy_local.append(local_policy_state)      
-        print(probability_matrix)
-
+        print(np.sign(np.max(np.concatenate(probability_matrix))))
     else:
         raise ValueError('key not implemented')
-    v0_evol_local, local_info, exe_time_local = policy_eval_general(n, p, p_s, cutoff, \
-                                                                    list(range(0,len(global_info))), policy_local, tol)
+    v0_evol_local, local_info, exe_time_local = policy_eval_general(n, p, p_s, cutoff, policy_local, tol)
     save_local_data(n, p, p_s, cutoff, tol, v0_evol_local, local_info, exe_time_local,key)
         
 def state_distribution(policy, n, p, p_s, cutoff, states_list, tolerance=1e-7 , N_samples=10000, \
@@ -2261,3 +2273,197 @@ def global_to_local_iteration(n,p,p_s, cutoff, tol, key="majority", N_iteration=
         iteration+=1
         iterations=True
     return value_list
+
+def policy_eval_swap2(n, p, p_s, cutoff, tolerance=1e-5,
+                           progress=True, savedata=False, key="swap2", nested=False):
+    '''Find the expected delivery time of the swap-asap policy in a
+        homogeneous repeater chain with the policy evaluation step from
+        our policy iteration algorithm.
+        ---Inputs---
+            · n:    (int) number of nodes in the chain.
+            · p:    (float) probability of successful entanglement
+                    generation between neighboring nodes.
+            · p_s:  (float) probability of successful entanglement swap.
+            · cutoff:   (int) memory cutoff in time steps - entangled links
+                        whose age reaches the cutoff are discarded.
+            · tolerance:    (float) the algorithm stops when the policy
+                            is stable and the maximum difference between
+                            a value and the updated value is smaller than
+                            this tolerance. This impacts the error on the
+                            delivery time.
+            · progress: (bool) if True, prints progress.
+            · savedata: (bool) if True, saves the outputs in a file.
+            · nested:   (bool) if True and n=5, the swap-asap policy is
+                        modified as follows. In a full state (in which
+                        every pair of neighbors shares an entangled link),
+                        instead of performing swaps at nodes two, three,
+                        and four, only perform swaps at nodes two and four.
+        ---Outputs---
+            · v0_evol:  (list of lists) each list contains the evolution
+                        of the value of the empty state (no entangled links)
+                        over the policy evaluation. The final value
+                        is v0_evol[-1][-1].
+            · state_info: (list of dicts) each dictionary corresponds to
+                          a different state of the MDP, and it contains
+                          the following keys:
+                - state: matrix representation of the state. Element ij
+                         contains the age of the entangled link shared
+                         between nodes i and j. If the link does not exist,
+                         the age is inf. In policy iteration, we consider
+                         states just before swaps are performed.
+                - action_space: list of valid actions. Each action is a
+                                set of nodes that must perform swaps.
+                - policy: probability that each element in the action space
+                          is chosen by the swap-asap policy, i.e., this will
+                          be a one-hot vector with the one in the last position.
+                - value: value of the state when following the swap-asap policy.
+                         The expected delivery time from this state can be
+                         calculated as -(value+1).
+            · exe_time: (int) execution time of the algorithm in seconds.'''
+
+    # If savedata is True, we will also save checkpoints
+    checkpoints = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
+
+    if nested:
+        assert n==5, 'Nested scheme only implemented for n=5 nodes'
+        if savedata==True:
+            raise ValueError('nested+savedata not implemented')
+
+    ## Initialize ##
+    start_time = time.time()
+    s0 = np.full(shape=(n,n), fill_value=np.infty)
+    action_space = [None]
+    agent = Agent(s0=s0, max=cutoff)
+    environment = Environment(p, cutoff, p_s=p_s)
+    v0_evol = []
+    action_asap=[]
+    action_swap2=[]
+    for node in range(1,5-1):
+        action_asap.append(node)
+        if node%2!=0:
+            action_swap2.append(node)
+    ### Policy evaluation  ###
+    v0 = []
+    error = -np.inf
+    while abs(error) > tolerance:
+        idx = 0
+        error = -np.inf
+        while idx < len(agent.state_list):
+            state = agent.get(idx, 'state')
+            value = agent.get(idx, 'value')
+            policy = agent.get(idx, 'policy')
+            action_space = agent.get(idx, 'action_space')
+
+            # Check for terminal states
+            if environment.check_e2e_link(state):
+                idx+=1
+                continue
+
+            # Set policy swap2
+            policy_general = [0.0 for action in policy]
+            nodes_list=[]
+            for node in range(1,n-1):
+                if [node] in action_space and node%2==0 and max(state[node][node-1],state[node][node+1])<cutoff:
+                    nodes_list.append(node)
+            
+            action_swap2=[x for x in action_space[-1] if x not in nodes_list]
+            policy_general[action_space.index(action_swap2)]=1
+            
+            if nested:
+                if len(policy_general)==8: # In a 5-node chain, there are 8 possible
+                                            # actions only if all the small links exist
+                    policy_general = [0.0 for action in policy]
+                    for act_idx, act in enumerate(action_space):
+                        if act == [1,3]:
+                            break
+                    policy_general[act_idx] = 1.0
+
+            agent.update(idx, policy_general, 'policy')
+
+            # Loop over possible actions
+            v = 0
+            for action, action_prob in zip(action_space, policy):
+                states_nxt, probs_nxt, actions_nxt = environment.step(state, action)
+                assert len(states_nxt) == len(probs_nxt)
+                assert len(states_nxt) == len(actions_nxt)
+                for s, P, a in zip(states_nxt, probs_nxt, actions_nxt):
+                    if P == 0.0: continue
+                    s_idx = agent.observe(s, a)
+                    s_value = agent.get(s_idx, 'value')
+                    v += action_prob*P*(-1 + s_value)
+
+            # Calculate error
+            error = max(error, abs(value-v))
+
+            # Update value
+            agent.update(idx, v, 'value')
+            idx +=1
+
+        v0.append(agent.get(0,'value'))
+        if progress:
+            print('Policy eval.: error = %.2e > %.2e = tolerance'%(error,tolerance), end='\r')
+
+        # Save checkpoints
+        if savedata:
+            for checkpoint_tol in checkpoints:
+                if error<checkpoint_tol:
+                    end_time = time.time()
+                    exe_time = end_time-start_time
+                    v0_evol_cp = v0_evol
+                    v0_evol_cp.append(v0)
+                    save_local_data(n, p, p_s, cutoff, checkpoint_tol, v0_evol_cp, agent.state_info, exe_time, key)
+                    checkpoints = checkpoints[1:]
+
+    v0_evol.append(v0)
+
+    if progress:
+        print(' '*80, end='\r') # Clear line
+
+    end_time = time.time()
+    exe_time = end_time-start_time
+
+    if savedata:
+        save_local_data(n, p, p_s, cutoff, checkpoint_tol, v0_evol_cp, agent.state_info, exe_time, key)
+    print(idx)
+    return v0_evol, agent.state_info, exe_time
+
+def check_if_local(n,p,p_s, cutoff,tol):
+    assert main.check_policyiter_data(n,p,p_s,cutoff,tol) is True,'The global policy does not exist.'
+    
+    #_,state_info,_=main.load_local_data(n,p,p_s,cutoff,tol,"majority")
+    _,state_info,_=load_policyiter_data(n,p,p_s,cutoff,tol)
+    combinations_matrix=generate_combinations(n,cutoff)
+    actions_matrix=copy_shape_matrix(combinations_matrix)
+    
+    for dictionary in state_info:
+        state=dictionary['state']
+        policy=dictionary['policy']
+        action_space=dictionary['action_space']
+        
+        for interior_node in range(n-2):
+                
+            if np.any(np.all(combinations_matrix[interior_node] == state[interior_node+1,:], axis=1)):
+                
+                index = np.where(np.all(combinations_matrix[interior_node] == state[interior_node+1,:], axis=1))[0].item()
+                if actions_matrix[interior_node][index]==0:
+                    #print(1-2*(interior_node+1 in action_space[policy.index(1)]))
+                    actions_matrix[interior_node][index] = 1-2*(interior_node+1 in action_space[policy.index(1)])
+                #if actions_matrix[interior_node][index]==True:
+                    #print(state)
+                    #print(action_space)
+                    #print(policy)
+                    #print(actions_matrix[interior_node][index])
+                if actions_matrix[interior_node][index] != 1-2*(interior_node+1 in action_space[policy.index(1)]):
+                    print(state)
+                    print(action_space)
+                    print(policy)
+                    print(actions_matrix[interior_node][index])
+                    #return False             
+    return True
+                            
+def div_by_2(number):
+    count = 0
+    while number % 2 == 0:
+        count += 1
+        number = number // 2  # Integer division by 2
+    return count                          
