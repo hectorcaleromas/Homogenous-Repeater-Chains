@@ -642,7 +642,7 @@ def policy_eval_swapasap(n, p, p_s, cutoff, tolerance=1e-5,
 
     if savedata:
         save_swapasap_data(n, p, p_s, cutoff, tolerance, v0_evol, agent.state_info, exe_time)
-    print(idx)
+    #print(idx)
     return v0_evol, agent.state_info, exe_time
 
 def check_swapasap_data(n, p, p_s, cutoff, tolerance):
@@ -2467,3 +2467,45 @@ def div_by_2(number):
         count += 1
         number = number // 2  # Integer division by 2
     return count                          
+
+def gen_sowe(n):
+    sowe=np.zeros([2,n])
+    if n==3:
+        sowe[0][1]=1
+        sowe[1][1]=1
+        
+    if n==4:
+        sowe[0][1:3]=2
+        sowe[1][1:3]=1
+        
+    elif not n%2==0:
+        mid_point=int((n+1)/2)
+        sowe_half=gen_sowe(mid_point)
+        sowe[0][1:mid_point-1]=sowe_half[0][1:-1]
+        sowe[0][mid_point:n-1]=sowe_half[0][1:-1]
+        sowe[1][1:mid_point-1]=sowe_half[1][1:-1]
+        sowe[1][mid_point:n-1]=sowe_half[1][1:-1]
+        sowe[0][mid_point-1]=mid_point-1
+        sowe[1][mid_point-1]=2
+        
+    else:
+        mid_point=int(n/2)
+        sowe_half=gen_sowe(mid_point)
+        sowe[0][1:mid_point-1]=sowe_half[0][1:-1]
+        sowe[0][mid_point+1:n-1]=sowe_half[0][1:-1]
+        sowe[1][1:mid_point-1]=sowe_half[1][1:-1]
+        sowe[1][mid_point+1:n-1]=sowe_half[1][1:-1]
+        sowe[0][mid_point-1:mid_point+1]=[mid_point]*2
+        sowe[1][mid_point-1]=3
+        sowe[1][mid_point]=4
+        
+    return sowe
+
+def post_swap_time(t1,t2,F0,tau):
+    F1=0.25+(F0-0.25)*np.exp(-t1/tau)
+    F2=0.25+(F0-0.25)*np.exp(-t2/tau)
+    F_post=F1*F2+((1-F1)*(1-F2)/3)
+    return -tau*np.log((F_post-0.25)/(F0-0.25))
+
+
+   
