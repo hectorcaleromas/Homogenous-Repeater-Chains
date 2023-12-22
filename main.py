@@ -753,7 +753,7 @@ def load_swapasap_data(n, p, p_s, cutoff, tolerance):
 
 def simulate_environment(policy, n, p, p_s, cutoff, N_samples=100,
                          randomseed=2, tolerance=1e-7,
-                         progress_bar='notebook', savedata=False, test=False):
+                         progress_bar='notebook', savedata=False, test=False, max_distance=2):
     '''Performs a Monte Carlo simulation of the environment used
         for policy iteration. For each sample, the repeater chain
         evolves until end-to-end entanglement is produced, and the
@@ -843,17 +843,51 @@ def simulate_environment(policy, n, p, p_s, cutoff, N_samples=100,
                     action = []
             
             elif policy== 'sowe':
+                sowe=gen_sowe(n)
                 nodes_list=[]
                 for node in range(1,n-1):
-                    d=div_by_2(node)
-                    if d==1:
-                        if [node] in action_space and node%2==0 and max(state[node][node-1],state[node][node+1])<cutoff:
-                            nodes_list.append(node)
-                    if d>1:
-                        if [node] in action_space and node%(2**d)==0 and \
-                        max(min(state[node][node-2**d+1:node-1]),min(state[node][node+1:node+2**d-1]))<cutoff:
-                            nodes_list.append(node)
+                    s0=int(sowe[0][node])
+                    s1=int(sowe[1][node])
+                    if s1==2:
+                        if s0==2:
+                            if [node] in action_space and max(state[node][node-1],state[node][node+1])<cutoff:
+                                nodes_list.append(node)
+                        if s0>2:
+                            if [node] in action_space and max(min(state[node][node-s0+1:node]),min(state[node][node+1:node+s0]))<cutoff:
+                                nodes_list.append(node)
+                    if s1==3:
+                        if s0==3:
+                            if [node] in action_space and max(state[node][node-1],state[node][node+2])<cutoff:
+                                nodes_list.append(node)
+                        if s0>3:
+                            if [node] in action_space and max(min(state[node][node-s0+2:node]),min(state[node][node+2:node+s0]))<cutoff:
+                                nodes_list.append(node)
+                    if s1==4:
+                        if s0==3:
+                            if [node] in action_space and max(state[node][node-2],state[node][node+1])<cutoff:
+                                nodes_list.append(node)
+                        if s0>3:
+                            if [node] in action_space and max(min(state[node][node-s0+1:node-1]),min(state[node][node+1:node+s0-1]))\
+                            <cutoff:
+                                nodes_list.append(node)
                             
+                action=[x for x in action_space[-1] if x not in nodes_list]
+                
+            elif policy=="amcs":
+                checked_nodes=[] #List of checked nodes
+                nodes_list=[] #list of nodes that wait
+                for node in range(1,n-1):
+                    sub_chain=[] #Current sub_chain
+                    if [node] in action_space and node not in checked_nodes:
+                        node_sub=node
+                        checked_nodes.append(node_sub)
+                        while(np.min(state[node_sub][node_sub:])<cutoff and node_sub<=n-1):
+                            sub_chain.append(node_sub)              
+                            next_node = node_sub+np.argmin(state[node_sub][node_sub:])
+                            checked_nodes.append(next_node)
+                            node_sub = next_node
+                        for x in split_chain(len(sub_chain),max_distance):
+                            nodes_list.append(sub_chain[x])
                 action=[x for x in action_space[-1] if x not in nodes_list]
             else:
                 raise ValueError('Unknown policy')
@@ -2471,41 +2505,317 @@ def div_by_2(number):
 def gen_sowe(n):
     sowe=np.zeros([2,n])
     if n==3:
-        sowe[0][1]=1
+        sowe[0][:]=1
         sowe[1][1]=1
         
+        return sowe
     if n==4:
+        sowe[0][0]=1
+        sowe[0][3]=1
         sowe[0][1:3]=2
         sowe[1][1:3]=1
         
+        return sowe
     elif not n%2==0:
         mid_point=int((n+1)/2)
         sowe_half=gen_sowe(mid_point)
-        sowe[0][1:mid_point-1]=sowe_half[0][1:-1]
-        sowe[0][mid_point:n-1]=sowe_half[0][1:-1]
-        sowe[1][1:mid_point-1]=sowe_half[1][1:-1]
-        sowe[1][mid_point:n-1]=sowe_half[1][1:-1]
+        sowe[0][0:mid_point-1]=sowe_half[0][0:-1]
+        sowe[0][mid_point:n]=sowe_half[0][1:]
+        sowe[1][0:mid_point-1]=sowe_half[1][0:-1]
+        sowe[1][mid_point:n]=sowe_half[1][1:]
         sowe[0][mid_point-1]=mid_point-1
         sowe[1][mid_point-1]=2
-        
+        return sowe
     else:
         mid_point=int(n/2)
         sowe_half=gen_sowe(mid_point)
-        sowe[0][1:mid_point-1]=sowe_half[0][1:-1]
-        sowe[0][mid_point+1:n-1]=sowe_half[0][1:-1]
-        sowe[1][1:mid_point-1]=sowe_half[1][1:-1]
-        sowe[1][mid_point+1:n-1]=sowe_half[1][1:-1]
+        sowe[0][0:mid_point-1]=sowe_half[0][0:-1]
+        sowe[0][mid_point+1:n]=sowe_half[0][1:]
+        sowe[1][0:mid_point-1]=sowe_half[1][0:-1]
+        sowe[1][mid_point+1:n]=sowe_half[1][1:]
         sowe[0][mid_point-1:mid_point+1]=[mid_point]*2
         sowe[1][mid_point-1]=3
         sowe[1][mid_point]=4
-        
-    return sowe
+        return sowe
+    
+def mc_iteration(parameters) :
+    #Performs a Monte Carlo simulation, until e2e entanglement is achieved
+    #inputs: parameters (n, p, p_s, cutoff & policy)
+    #outputs: e2e time
+# Unpack Parameters
+    n=int(parameters[0])
+    p=float(parameters[1])
+    p_s=float(parameters[2])
+    cutoff=int(parameters[3])
+    policy=parameters[4]
+    max_distance=int(parameters[5])
+    randomseed=int(parameters[6])
+    np.random.seed(randomseed)
+    random.seed(randomseed)
+    rng = np.random.RandomState(randomseed)
+    
+    #print(p)
+# Initialize state
+    done = False
+    state = np.full(shape=(n,n), fill_value=np.infty)
+    environment = Environment(p, cutoff, p_s=p_s)
+    action_space = environment.generate_action_space(state)
+    
 
-def post_swap_time(t1,t2,F0,tau):
-    F1=0.25+(F0-0.25)*np.exp(-t1/tau)
-    F2=0.25+(F0-0.25)*np.exp(-t2/tau)
-    F_post=F1*F2+((1-F1)*(1-F2)/3)
-    return -tau*np.log((F_post-0.25)/(F0-0.25))
+    # Run policy
+    time = 0
+    while not done:
+        # Choose next action
+        if policy == 'swap-asap':
+            m = 0
+            action = action_space[0]
+            for a in action_space:
+                if len(a) > m:
+                    m = len(a)
+                    action = a
+        elif policy == 'optimal':
+            action = []
+            for s in nowait_states:
+                s = np.array(s)
+                if (state == s).all():
+                    action = nowait_actions[nowait_states.index(state.tolist())]
+                    break
+        elif policy == 'wait':
+            if environment.check_e2e_path(state):
+                m = 0
+                action = action_space[0]
+                for a in action_space:
+                    if len(a) > m:
+                        m = len(a)
+                        action = a
+            else:
+                action = []
+            
+        elif policy== 'sowe':
+            sowe=gen_sowe(n)
+            nodes_list=[]
+            for node in range(1,n-1):
+                s0=int(sowe[0][node])
+                s1=int(sowe[1][node])
+                if s1==2:
+                    if [node] in action_space and max(state[node][node-s0],state[node][node+s0])>cutoff:
+                        nodes_list.append(node)
+                if s1==3:
+                    if [node] in action_space and state[node][node-s0+1]>cutoff:
+                        nodes_list.append(node)
+                if s1==4:
+                    if [node] in action_space and state[node][node+s0-1]>cutoff:
+                        nodes_list.append(node)
+                        
+            action=[x for x in action_space[-1] if x not in nodes_list]
+            
+        elif policy=="amcs":
+            checked_nodes=[] #List of checked nodes
+            nodes_list=[] #list of nodes that wait
+            for node in range(1,n-1):
+                sub_chain=[] #Current sub_chain
+                if [node] in action_space and node not in checked_nodes:
+                    node_sub=node
+                    checked_nodes.append(node_sub)
+                    while(np.min(state[node_sub][node_sub:])<cutoff and node_sub<=n-1):
+                        sub_chain.append(node_sub)
+                        next_node = node_sub+np.argmin(state[node_sub][node_sub:])
+                        checked_nodes.append(next_node)
+                        node_sub = next_node
+                        for x in split_chain(len(sub_chain),max_distance):
+                            nodes_list.append(sub_chain[x])
+            action=[x for x in action_space[-1] if x not in nodes_list]
+            
+        elif policy=="amcs-efms":
+            l=int(np.floor((n+1)/2)-1)
+            r=int(np.ceil((n+1)/2)-1)
+            sowe=gen_sowe(n)
+            checked_nodes=[] #List of checked nodes
+            nodes_list=[] #list of nodes that wait
+            for node in range(1,l):
+                sub_chain=[] #Current sub_chain
+                if [node] in action_space and node not in checked_nodes:
+                    node_sub=node
+                    checked_nodes.append(node_sub)
+                    while(np.min(state[node_sub][node_sub:])<cutoff and node_sub<l):
+                        sub_chain.append(node_sub)
+                        next_node = node_sub+np.argmin(state[node_sub][node_sub:])
+                        checked_nodes.append(next_node)
+                        node_sub = next_node
+                        for x in split_chain(len(sub_chain),max_distance):
+                            nodes_list.append(sub_chain[x])
+            for node in range(l,r+1):
+                s0=int(sowe[0][node])
+                s1=int(sowe[1][node])
+                if s1==2:
+                    if [node] in action_space and max(state[node][node-s0],state[node][node+s0])>cutoff:
+                        nodes_list.append(node)                 
+                if s1==3:
+                    if [node] in action_space and state[node][node-s0+1]>cutoff:
+                        nodes_list.append(node)
+                if s1==4:
+                    if [node] in action_space and state[node][node+s0-1]>cutoff:
+                        nodes_list.append(node)
 
+            for node in range(r+1,n-1):
+                sub_chain=[] #Current sub_chain
+                if [node] in action_space and node not in checked_nodes:
+                    node_sub=node
+                    checked_nodes.append(node_sub)
+                    while(np.min(state[node_sub][node_sub:])<cutoff and node_sub<n-1):
+                        sub_chain.append(node_sub)
+                        next_node = node_sub+np.argmin(state[node_sub][node_sub:])
+                        checked_nodes.append(next_node)
+                        node_sub = next_node
+                    for x in split_chain(len(sub_chain),max_distance):
+                        nodes_list.append(sub_chain[x])
+            action=[x for x in action_space[-1] if x not in nodes_list]
+        else:
+            raise ValueError('Unknown policy')
 
-   
+        # Perform action
+        s_out, p_out, a_out = environment.step(state, action)
+        idx_next = rng.choice( len(s_out), p=p_out )
+        state = s_out[idx_next]
+        action_space = a_out[idx_next]
+                
+        if environment.check_e2e_link(state):
+            done=True
+        else:
+            time+=1
+    return time   
+
+def mc_timesteps(parameters) :
+    #Performs a Monte Carlo simulation, until e2e entanglement is achieved
+    #inputs: parameters (n, p, p_s, cutoff & policy)
+    #outputs: e2e time
+# Unpack Parameters
+    n,p,p_s,cutoff,policy,timesteps, max_distance=parameters
+    rng = np.random.RandomState()
+    
+    #print(p)
+# Initialize state
+    done = False
+    state = np.full(shape=(n,n), fill_value=np.infty)
+    environment = Environment(p, cutoff, p_s=p_s)
+    action_space = environment.generate_action_space(state)
+
+    # Run policy
+    e2e=0
+    time = 0
+    avg_age=0
+    while time<=timesteps:
+        # Choose next action
+        if policy == 'swap-asap':
+            m = 0
+            action = action_space[-1]
+            #for a in action_space:
+                #if len(a) > m:
+                   # m = len(a)
+                    #action = a
+        elif policy == 'optimal':
+            action = []
+            for s in nowait_states:
+                s = np.array(s)
+                if (state == s).all():
+                    action = nowait_actions[nowait_states.index(state.tolist())]
+                    break
+        elif policy == 'wait':
+            if environment.check_e2e_path(state):
+                m = 0
+                action = action_space[0]
+                for a in action_space:
+                    if len(a) > m:
+                        m = len(a)
+                        action = a
+            else:
+                action = []
+            
+        elif policy== 'sowe':
+            sowe=gen_sowe(n)
+            nodes_list=[]
+            for node in range(1,n-1):
+                s0=int(sowe[0][node])
+                s1=int(sowe[1][node])
+                if s1==2:
+                    if s0==2:
+                        if [node] in action_space and max(state[node][node-1],state[node][node+1])<cutoff:
+                            nodes_list.append(node)
+                    if s0>2:
+                        if [node] in action_space and max(min(state[node][node-s0+1:node]),min(state[node][node+1:node+s0]))<cutoff:
+                            nodes_list.append(node)
+                            
+                if s1==3:
+                    if s0==3:
+                        if [node] in action_space and max(state[node][node-1],state[node][node+2])<cutoff:
+                            nodes_list.append(node)
+                    if s0>3:
+                        if [node] in action_space and max(min(state[node][node-s0+2:node]),min(state[node][node+2:node+s0]))<cutoff:
+                            nodes_list.append(node)
+                if s1==4:
+                    if s0==3:
+                        if [node] in action_space and max(state[node][node-2],state[node][node+1])<cutoff:
+                            nodes_list.append(node)
+                    if s0>3:
+                        if [node] in action_space and max(min(state[node][node-s0+1:node-1]),min(state[node][node+1:node+s0-1]))<cutoff:
+                            nodes_list.append(node)
+            action=[x for x in action_space[-1] if x not in nodes_list]
+            
+        elif policy=="amcs":
+            checked_nodes=[] #List of checked nodes
+            nodes_list=[] #list of nodes that wait
+            for node in range(1,n-1):
+                sub_chain=[] #Current sub_chain
+                if [node] in action_space and node not in checked_nodes:
+                    node_sub=node
+                    checked_nodes.append(node_sub)
+                    while(np.min(state[node_sub][node_sub:])<cutoff and node_sub<=n-1):
+                        sub_chain.append(node_sub)
+                        next_node = node_sub+np.argmin(state[node_sub][node_sub:])
+                        checked_nodes.append(next_node)
+                        node_sub = next_node
+                        for x in split_chain(len(sub_chain),max_distance):
+                            nodes_list.append(sub_chain[x])
+            action=[x for x in action_space[-1] if x not in nodes_list]
+        else:
+            raise ValueError('Unknown policy')
+
+        # Perform action
+        s_out, p_out, a_out = environment.step(state, action)
+        idx_next = rng.choice( len(s_out), p=p_out )
+        state = s_out[idx_next]
+        action_space = a_out[idx_next]
+                
+        if environment.check_e2e_link(state):
+            e2e+=1
+            avg_age+=state[0,n-1]
+            state[0,n-1]=np.inf
+            state[n-1,0]=np.inf
+            action_space = environment.generate_action_space(state)
+        else:
+            time+=1
+    return e2e, avg_age/e2e   
+
+def split_chain(length,max_distance):
+    """ Splits a chain in a way such as a maximum of max_distance swaps can happen simultaneously
+     ---Inputs---
+            · length:    (int) number of nodes in the sub-chain.
+            · max_distance:    (int) maximum allowed number of consecutive swaps.
+         
+     ---Outputs---
+            · index_list:  (list) contains the position of the nodes (in the sub_chain) that must wait"
+    """
+    index_list=[]
+    num_split=np.floor(length/(max_distance+1))
+    distance_splits= num_split*(max_distance+1)-max_distance
+    shift=np.floor((length-distance_splits)/2)
+    for x in range(length):
+        if (x-shift)%(max_distance+1)==0:
+            index_list.append(x)
+    return index_list
+
+def seed_array(seed, N):
+    random.seed(seed)  # Set the seed for reproducibility
+    # Generate a unique seed array of N elements
+    seed_array = random.sample(range(2**32), N)
+    return np.array(seed_array)[:, None]
