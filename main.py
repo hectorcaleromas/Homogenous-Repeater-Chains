@@ -842,7 +842,7 @@ def simulate_environment(policy, n, p, p_s, cutoff, N_samples=100,
                 else:
                     action = []
             
-            elif policy== 'sowe':
+            elif policy== 'efms-nested':
                 sowe=gen_sowe(n)
                 nodes_list=[]
                 for node in range(1,n-1):
@@ -2539,9 +2539,10 @@ def gen_sowe(n):
         return sowe
     
 def mc_iteration(parameters) :
-    #Performs a Monte Carlo simulation, until e2e entanglement is achieved
-    #inputs: parameters (n, p, p_s, cutoff & policy)
-    #outputs: e2e time
+    """"Performs a Monte Carlo simulation, until e2e entanglement is achieved
+    inputs: parameters (n, p, p_s, cutoff & policy)
+    outputs: time   e2e delivery time""""
+    
 # Unpack Parameters
     n=int(parameters[0])
     p=float(parameters[1])
@@ -2558,13 +2559,25 @@ def mc_iteration(parameters) :
 # Initialize state
     done = False
     state = np.full(shape=(n,n), fill_value=np.infty)
+    ages = np.full(shape=(n,n), fill_value=np.infty)
     environment = Environment(p, cutoff, p_s=p_s)
-    action_space = environment.generate_action_space(state)
     
 
-    # Run policy
+    # Run policy 
     time = 0
     while not done:
+        # Elementary link generation
+        available_links=environment.find_available_links(state)
+        for link in available_links:
+            if rng.rand()<p: #link generation succeeds
+                state[link,link+1]=0
+                state[link+1,link]=0
+                ages[link,link+1]=0
+                ages[link+1,link]=0
+        
+        # Generate action space
+        action_space = environment.generate_action_space(state)   
+             
         # Choose next action
         if policy == 'swap-asap':
             m = 0
@@ -2591,7 +2604,7 @@ def mc_iteration(parameters) :
             else:
                 action = []
             
-        elif policy== 'sowe':
+        elif policy== 'efms-nested':
             sowe=gen_sowe(n)
             nodes_list=[]
             for node in range(1,n-1):
@@ -2673,17 +2686,47 @@ def mc_iteration(parameters) :
         else:
             raise ValueError('Unknown policy')
 
-        # Perform action
-        s_out, p_out, a_out = environment.step(state, action)
-        idx_next = rng.choice( len(s_out), p=p_out )
-        state = s_out[idx_next]
-        action_space = a_out[idx_next]
+            
+        # Perform swaps
+        for mid_node in action:
+            end_nodes = environment.find_virtual_neighbors(state, mid_node)
+                  
+            if len(end_nodes)!=2:
+                state[mid_node,end_nodes[0]]=np.infty
+                state[end_nodes[0],mid_node]=np.infty
+                ages[mid_node,end_nodes[0]]=np.infty
+                ages[end_nodes[0],mid_node]=np.infty
+                
+            elif rng.rand()<p_s: #swap suceeds
+                state=environment.swap(state,mid_node,end_nodes)
+                ages=environment.swap_ages(ages,mid_node,end_nodes)
+                
+            else:          #swap fails
+                state[mid_node,end_nodes[0]]=np.infty
+                state[mid_node,end_nodes[1]]=np.infty
+                state[end_nodes[0],mid_node]=np.infty
+                state[end_nodes[1],mid_node]=np.infty
+                ages[mid_node,end_nodes[0]]=np.infty
+                ages[mid_node,end_nodes[1]]=np.infty
+                ages[end_nodes[0],mid_node]=np.infty
+                ages[end_nodes[1],mid_node]=np.infty
+                       
+        # Apply cutoffs
+        if not environment.check_e2e_link(state):
+            state,ages = environment.cutoffs_ages(state,ages)
+        
+        # Advance time
+        state += 1
+        ages += 1
+      
                 
         if environment.check_e2e_link(state):
             done=True
-        else:
-            time+=1
-    return time   
+            avg_age=ages[0,n-1]
+        
+        time+=1
+        
+    return time, avg_age
 
 def mc_timesteps(parameters) :
     #Performs a Monte Carlo simulation, until e2e entanglement is achieved
@@ -2731,7 +2774,7 @@ def mc_timesteps(parameters) :
             else:
                 action = []
             
-        elif policy== 'sowe':
+        elif policy== 'efms-nested':
             sowe=gen_sowe(n)
             nodes_list=[]
             for node in range(1,n-1):
