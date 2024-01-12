@@ -5,6 +5,7 @@ import numpy as np
 from pathlib import Path
 import pickle
 
+
 class Environment:
     '''Environment for our policy iteration algorithm.
         ---Inputs---
@@ -20,10 +21,12 @@ class Environment:
                         not exist, the age is inf. In policy iteration,
                         we consider states just before swaps are performed.
             · action:   (list) set of nodes that must perform swaps.'''
-    def __init__(self, p, cutoff, p_s=1):
+    def __init__(self, p, cutoff, p_s=1,F0=1, tau=100):
         self.p = p
         self.cutoff = cutoff
         self.p_s = p_s
+        self.F0=F0
+        self.tau=tau
 
     def check_symmetry(self, state, rtol=0, atol=1e-10):
         '''Check if state is symmetric.'''
@@ -71,6 +74,16 @@ class Environment:
             state[old_links[0][i],old_links[1][i]] = np.infty
             state[old_links[1][i],old_links[0][i]] = np.infty
         return state
+    
+    def cutoffs_ages(self, state, ages):
+        '''Remove links older than the cutoff.'''
+        old_links = np.multiply((state>=self.cutoff),(state<np.infty)).nonzero()
+        for i in range(len(old_links[0])):
+            state[old_links[0][i],old_links[1][i]] = np.infty
+            state[old_links[1][i],old_links[0][i]] = np.infty
+            ages[old_links[0][i],old_links[1][i]] = np.infty
+            ages[old_links[1][i],old_links[0][i]] = np.infty
+        return state,ages
 
     def find_available_links(self, state):
         '''Find every physical link with qubits available
@@ -271,6 +284,7 @@ class Environment:
             p_out = p_out_
         return s_out, p_out, a_out
 
+    
     def swap(self, state, mid_node, end_nodes):
         '''Performs a deterministic swap on state, using mid_node (int) as
             the middle node and end_nodes (tuple) as end nodes.
@@ -279,9 +293,14 @@ class Environment:
             assert end_nodes[0] < mid_node and mid_node < end_nodes[1], 'mid_node \
                   should not share entangled links with its left/right side only'
 
-        # Create new link
-        state[end_nodes[0],end_nodes[1]] = max(state[end_nodes[0],mid_node],
-                                         state[mid_node, end_nodes[1]])
+        #Compute post-swapping age
+        
+        t1=state[end_nodes[0],mid_node]
+        t2=state[mid_node, end_nodes[1]]
+        
+        #Create new link
+        t_post=np.max([t1,t2])
+        state[end_nodes[0],end_nodes[1]] = t_post
         state[end_nodes[1],end_nodes[0]] = state[end_nodes[0],end_nodes[1]]
 
         # Remove input links
@@ -291,3 +310,37 @@ class Environment:
         state[end_nodes[1], mid_node] = np.infty
 
         return state
+    
+    def swap_ages(self, ages, mid_node, end_nodes):
+        '''Performs a deterministic swap on state, using mid_node (int) as
+            the middle node and end_nodes (tuple) as end nodes.
+            The age of the new link is the age corresponding to the post-swapping fidelity.'''
+        if self.p_s == 1:
+            assert end_nodes[0] < mid_node and mid_node < end_nodes[1], 'mid_node \
+                  should not share entangled links with its left/right side only'
+
+        #Compute post-swapping age
+        
+        t1=ages[end_nodes[0],mid_node]
+        t2=ages[mid_node, end_nodes[1]]
+        F1=0.25+(self.F0-0.25)*np.exp(-t1/self.tau)
+        F2=0.25+(self.F0-0.25)*np.exp(-t2/self.tau)
+        F_post=F1*F2+((1-F1)*(1-F2)/3)
+        if F_post==0.25:
+            t_post=np.inf
+        else:
+            t_post=-self.tau*np.log((F_post-0.25)/(self.F0-0.25))
+        #Create new link
+        ages[end_nodes[0],end_nodes[1]] = t_post
+        ages[end_nodes[1],end_nodes[0]] = ages[end_nodes[0],end_nodes[1]]
+
+        # Remove input links
+        ages[mid_node, end_nodes[0]] = np.infty
+        ages[mid_node, end_nodes[1]] = np.infty
+        ages[end_nodes[0], mid_node] = np.infty
+        ages[end_nodes[1], mid_node] = np.infty
+
+        return ages
+    
+    
+
