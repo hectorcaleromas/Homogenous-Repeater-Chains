@@ -323,13 +323,7 @@ class Environment:
         
         t1=ages[end_nodes[0],mid_node]
         t2=ages[mid_node, end_nodes[1]]
-        F1=0.25+(self.F0-0.25)*np.exp(-t1/self.tau)
-        F2=0.25+(self.F0-0.25)*np.exp(-t2/self.tau)
-        F_post=F1*F2+((1-F1)*(1-F2)/3)
-        if F_post==0.25:
-            t_post=np.inf
-        else:
-            t_post=-self.tau*np.log((F_post-0.25)/(self.F0-0.25))
+        t_post=-self.tau*np.log((F_post-0.25)/(self.F0-0.25))
         #Create new link
         ages[end_nodes[0],end_nodes[1]] = t_post
         ages[end_nodes[1],end_nodes[0]] = ages[end_nodes[0],end_nodes[1]]
