@@ -323,7 +323,7 @@ class Environment:
         
         t1=ages[end_nodes[0],mid_node]
         t2=ages[mid_node, end_nodes[1]]
-        t_post=-self.tau*np.log((F_post-0.25)/(self.F0-0.25))
+        t_post=-self.tau*np.log((4*F0-1)/3)+t1+t2
         #Create new link
         ages[end_nodes[0],end_nodes[1]] = t_post
         ages[end_nodes[1],end_nodes[0]] = ages[end_nodes[0],end_nodes[1]]
