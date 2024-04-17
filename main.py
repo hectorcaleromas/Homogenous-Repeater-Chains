@@ -2939,6 +2939,7 @@ def split_chain(length,max_distance):
     num_split=np.floor(length/(max_distance+1))
     distance_splits= num_split*(max_distance+1)-max_distance
     shift=np.floor((length-distance_splits)/2)
+    print(shift,distance_splits)
     for x in range(length):
         if (x-shift)%(max_distance+1)==0:
             index_list.append(x)
